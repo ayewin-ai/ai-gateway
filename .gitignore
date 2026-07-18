@@ -1,0 +1,15 @@
+# Runtime data
+data/
+server.log
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db

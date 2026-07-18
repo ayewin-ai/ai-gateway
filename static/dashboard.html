@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enterprise AI Gateway — 管理 Dashboard</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #199e70; --s3: #c98500; --s4: #008300;
+    --s5: #9085e9; --s6: #e66767; --s7: #d55181; --s8: #d95926;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--page); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+    font-size: 14px; line-height: 1.5; padding: 24px;
+  }
+  h1 { font-size: 20px; font-weight: 650; }
+  h1 small { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 10px; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  header .spacer { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    background: transparent; color: var(--ink-2); border: 0; padding: 6px 14px;
+    cursor: pointer; font: inherit; font-size: 13px;
+  }
+  .seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; }
+  input[type=password], input[type=text] {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; width: 220px;
+  }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .kpi .label { color: var(--muted); font-size: 12px; }
+  .kpi .value { font-size: 26px; font-weight: 650; margin-top: 2px; }
+  .kpi .sub { color: var(--ink-2); font-size: 12px; margin-top: 2px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; min-width: 0; }
+  .card h2 { font-size: 14px; font-weight: 650; margin-bottom: 2px; }
+  .card .desc { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .card-head { display: flex; align-items: baseline; gap: 10px; }
+  .card-head .right { margin-left: auto; }
+  canvas { width: 100%; height: 200px; display: block; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { color: var(--muted); font-weight: 500; text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--baseline); white-space: nowrap; }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--grid); color: var(--ink-2); white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td:first-child { color: var(--ink); }
+  .bar-bg { background: var(--grid); border-radius: 4px; height: 8px; width: 110px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; background: var(--s1); }
+  .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .tooltip {
+    position: fixed; pointer-events: none; background: #262624; border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--ink);
+    z-index: 10; display: none; box-shadow: 0 4px 16px rgba(0,0,0,.5); white-space: nowrap;
+  }
+  .empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+  #login { max-width: 420px; margin: 80px auto; text-align: center; }
+  #login .card { padding: 32px; }
+  #login input { width: 100%; margin: 16px 0; }
+  #login button {
+    background: var(--s1); color: #fff; border: 0; border-radius: 8px;
+    padding: 8px 24px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .err { color: var(--critical); font-size: 13px; min-height: 18px; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="tooltip" class="tooltip"></div>
+
+<div id="login" hidden>
+  <div class="card">
+    <h1 style="justify-content:center">Enterprise AI Gateway</h1>
+    <p class="desc" style="color:var(--muted);margin-top:6px">請輸入 Master Key 進入管理 Dashboard</p>
+    <input id="mk" type="password" placeholder="sk-admin-...">
+    <div class="err" id="loginErr"></div>
+    <button onclick="doLogin()">登入</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+<header>
+  <h1>Enterprise AI Gateway<small>管理 Dashboard｜用量・成本・效能・安全・品質・節點</small></h1>
+  <div class="spacer"></div>
+  <div class="seg" id="rangeSeg">
+    <button data-h="1">1 小時</button>
+    <button data-h="24" class="on">24 小時</button>
+    <button data-h="168">7 天</button>
+    <button data-h="720">30 天</button>
+  </div>
+  <button class="seg" style="padding:6px 14px;cursor:pointer;color:var(--ink-2);background:transparent" onclick="logout()">登出</button>
+</header>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-head">
+      <div><h2>成本與用量趨勢</h2><div class="desc">成本（USD）與請求數，Showback 基礎</div></div>
+    </div>
+    <canvas id="trendChart" height="200"></canvas>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div><h2>用量與歸屬</h2><div class="desc">依維度歸屬請求 / Token / 成本</div></div>
+      <div class="right seg" id="groupSeg">
+        <button data-g="department" class="on">部門</button>
+        <button data-g="model">模型</button>
+        <button data-g="user">使用者</button>
+        <button data-g="app">應用</button>
+      </div>
+    </div>
+    <canvas id="usageChart" height="200"></canvas>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>成本與配額</h2><div class="desc">每把 API Key 的預算使用率、預警與熔斷狀態</div></div></div>
+    <div class="tablewrap"><table id="quotaTable"></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>效能與可靠性</h2><div class="desc">延遲、首 Token、錯誤率、重試、熔斷與模型健康</div></div></div>
+    <div class="tablewrap"><table id="perfTable"></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>安全與稽核</h2><div class="desc">敏感資料攔截、提示注入、政策命中與稽核紀錄</div></div></div>
+    <div class="tablewrap"><table id="secTable"></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>模型品質</h2><div class="desc">使用者回饋評分（/v1/feedback）</div></div></div>
+    <div class="tablewrap"><table id="qualityTable"></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>跨節點管理</h2><div class="desc">節點狀態、負載、容量與版本（水平擴充）</div></div></div>
+    <div class="tablewrap"><table id="nodeTable"></table></div>
+  </div>
+
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-head"><div><h2>請求 Trace</h2><div class="desc">最近請求：路由原因、Token I/O、成本、延遲、安全命中（可觀測性）</div></div></div>
+    <div class="tablewrap"><table id="reqTable"></table></div>
+  </div>
+</div>
+
+<footer>Enterprise AI Gateway v0.1.0｜每 15 秒自動更新</footer>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const SERIES = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"].map(css);
+let MK = localStorage.getItem("gw_master_key") || "";
+let HOURS = 24, GROUP = "department", timer = null;
+
+async function api(path) {
+  const r = await fetch(path, { headers: { Authorization: "Bearer " + MK } });
+  if (r.status === 403) { logout(); throw new Error("unauthorized"); }
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+function fmt(n, d = 0) { return Number(n).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d }); }
+function fmtCost(v) { return "$" + (v >= 0.01 || v === 0 ? v.toFixed(2) : v.toFixed(4)); }
+function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+function tstr(ts) { return new Date(ts * 1000).toLocaleString("zh-TW", { hour12: false }); }
+
+/* ---------- 登入 ---------- */
+async function doLogin() {
+  MK = $("#mk").value.trim();
+  try { await api("/admin/api/overview?hours=1"); }
+  catch { $("#loginErr").textContent = "Master Key 驗證失敗"; return; }
+  localStorage.setItem("gw_master_key", MK);
+  showApp();
+}
+function logout() {
+  localStorage.removeItem("gw_master_key"); MK = "";
+  clearInterval(timer);
+  $("#app").hidden = true; $("#login").hidden = false;
+}
+function showApp() {
+  $("#login").hidden = true; $("#app").hidden = false;
+  refresh();
+  clearInterval(timer);
+  timer = setInterval(refresh, 15000);
+}
+
+/* ---------- Canvas 圖表（含 hover tooltip） ---------- */
+function setupCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+const tooltip = $("#tooltip");
+function showTip(x, y, html) {
+  tooltip.innerHTML = html; tooltip.style.display = "block";
+  const pad = 14;
+  tooltip.style.left = Math.min(x + pad, window.innerWidth - tooltip.offsetWidth - 8) + "px";
+  tooltip.style.top = (y - tooltip.offsetHeight - 10 < 0 ? y + pad : y - tooltip.offsetHeight - 10) + "px";
+}
+function hideTip() { tooltip.style.display = "none"; }
+
+function drawLineChart(cv, points) {
+  const { ctx, w, h } = setupCanvas(cv);
+  ctx.clearRect(0, 0, w, h);
+  const padL = 46, padR = 10, padT = 12, padB = 22;
+  const iw = w - padL - padR, ih = h - padT - padB;
+  const maxCost = Math.max(...points.map(p => p.cost_usd), 1e-9);
+  const X = i => padL + iw * (points.length > 1 ? i / (points.length - 1) : 0.5);
+  const Y = v => padT + ih * (1 - v / maxCost);
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  ctx.fillStyle = css("--muted"); ctx.font = "11px system-ui"; ctx.textAlign = "right";
+  for (let g = 0; g <= 3; g++) {
+    const v = maxCost * g / 3, y = Y(v);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.fillText("$" + (v < 0.01 && v > 0 ? v.toFixed(4) : v.toFixed(2)), padL - 6, y + 4);
+  }
+  ctx.textAlign = "center";
+  const stepLbl = Math.max(1, Math.floor(points.length / 6));
+  points.forEach((p, i) => {
+    if (i % stepLbl === 0) {
+      const d = new Date(p.ts * 1000);
+      const lbl = HOURS <= 24 ? d.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false })
+                              : (d.getMonth() + 1) + "/" + d.getDate();
+      ctx.fillText(lbl, X(i), h - 6);
+    }
+  });
+  // 面積 + 線
+  ctx.beginPath();
+  points.forEach((p, i) => { const x = X(i), y = Y(p.cost_usd); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.strokeStyle = SERIES[0]; ctx.lineWidth = 2; ctx.stroke();
+  ctx.lineTo(X(points.length - 1), padT + ih); ctx.lineTo(X(0), padT + ih); ctx.closePath();
+  ctx.fillStyle = SERIES[0] + "26"; ctx.fill();
+  cv.onmousemove = e => {
+    const r = cv.getBoundingClientRect();
+    const i = Math.round((e.clientX - r.left - padL) / (iw / Math.max(points.length - 1, 1)));
+    if (i < 0 || i >= points.length) return hideTip();
+    const p = points[i];
+    showTip(e.clientX, e.clientY,
+      `<b>${tstr(p.ts)}</b><br>成本 $${p.cost_usd.toFixed(4)}<br>請求 ${fmt(p.requests)}<br>Token ${fmt(p.tokens)}`);
+  };
+  cv.onmouseleave = hideTip;
+}
+
+function drawBarChart(cv, items) {
+  const { ctx, w, h } = setupCanvas(cv);
+  ctx.clearRect(0, 0, w, h);
+  if (!items.length) {
+    ctx.fillStyle = css("--muted"); ctx.font = "13px system-ui"; ctx.textAlign = "center";
+    ctx.fillText("尚無資料", w / 2, h / 2); cv.onmousemove = null; return;
+  }
+  items = items.slice(0, 8);
+  const padL = 8, padR = 70, rowH = Math.min(30, (h - 10) / items.length);
+  const labelW = 110, bw = w - padL - padR - labelW;
+  const maxV = Math.max(...items.map(i => i.cost_usd), ...items.map(i => i.requests * 0), 1e-9);
+  const useCost = items.some(i => i.cost_usd > 0);
+  const val = i => useCost ? i.cost_usd : i.requests;
+  const maxVal = Math.max(...items.map(val), 1e-9);
+  items.forEach((it, i) => {
+    const y = 8 + i * rowH, bh = rowH - 9;
+    ctx.fillStyle = css("--ink-2"); ctx.font = "12px system-ui"; ctx.textAlign = "left";
+    let nm = it.name; if (nm.length > 9) nm = nm.slice(0, 8) + "…";
+    ctx.fillText(nm, padL, y + bh / 2 + 4);
+    const bwv = Math.max(2, bw * val(it) / maxVal);
+    ctx.fillStyle = SERIES[i % SERIES.length];
+    ctx.beginPath(); ctx.roundRect(padL + labelW, y, bwv, bh, [0, 4, 4, 0]); ctx.fill();
+    ctx.fillStyle = css("--ink-2"); ctx.textAlign = "left";
+    ctx.fillText(useCost ? fmtCost(it.cost_usd) : fmt(it.requests), padL + labelW + bwv + 6, y + bh / 2 + 4);
+  });
+  cv.onmousemove = e => {
+    const r = cv.getBoundingClientRect();
+    const i = Math.floor((e.clientY - r.top - 8) / rowH);
+    if (i < 0 || i >= items.length) return hideTip();
+    const it = items[i];
+    showTip(e.clientX, e.clientY,
+      `<b>${esc(it.name)}</b><br>請求 ${fmt(it.requests)}<br>Token ${fmt(it.tokens)}<br>成本 $${it.cost_usd.toFixed(4)}`);
+  };
+  cv.onmouseleave = hideTip;
+}
+
+/* ---------- 面板渲染 ---------- */
+function kpiCard(label, value, sub) {
+  return `<div class="kpi"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub || ""}</div></div>`;
+}
+function statusDot(color, text) {
+  return `<span class="badge"><span class="dot" style="background:${color}"></span>${esc(text)}</span>`;
+}
+
+async function refresh() {
+  try {
+    const [ov, trend, usage, quotas, perf, sec, quality, nodes, reqs] = await Promise.all([
+      api(`/admin/api/overview?hours=${HOURS}`),
+      api(`/admin/api/cost_trend?hours=${HOURS}&buckets=${HOURS <= 24 ? 24 : 30}`),
+      api(`/admin/api/usage?hours=${HOURS}&group_by=${GROUP}`),
+      api(`/admin/api/quotas`),
+      api(`/admin/api/performance?hours=${HOURS}`),
+      api(`/admin/api/security?hours=${HOURS}`),
+      api(`/admin/api/quality`),
+      api(`/admin/api/nodes`),
+      api(`/admin/api/requests?limit=25`),
+    ]);
+
+    $("#kpis").innerHTML =
+      kpiCard("請求數", fmt(ov.requests), `快取命中 ${fmt(ov.cache_hits)}`) +
+      kpiCard("總成本", "$" + fmt(ov.cost_usd, 4), "USD") +
+      kpiCard("Token I/O", fmt(ov.prompt_tokens + ov.completion_tokens),
+              `入 ${fmt(ov.prompt_tokens)}｜出 ${fmt(ov.completion_tokens)}`) +
+      kpiCard("平均延遲", fmt(ov.avg_latency_ms, 0) + " ms", `P95 ${fmt(perf.p95_latency_ms, 0)} ms`) +
+      kpiCard("錯誤率", (ov.error_rate * 100).toFixed(2) + "%",
+              ov.error_rate > 0.05 ? statusDot(css("--critical"), "偏高") : statusDot(css("--good"), "正常")) +
+      kpiCard("安全事件", fmt(ov.security_events), "DLP／注入／熔斷");
+
+    drawLineChart($("#trendChart"), trend);
+    drawBarChart($("#usageChart"), usage);
+
+    $("#quotaTable").innerHTML =
+      `<tr><th>Key</th><th>部門</th><th class="num">今日</th><th>每日預算</th><th class="num">本月</th><th>每月預算</th><th>狀態</th></tr>` +
+      (quotas.map(q => {
+        const bar = (pct, color) =>
+          `<div class="bar-bg"><div class="bar-fill" style="width:${Math.min(pct, 100)}%;background:${color}"></div></div>`;
+        const dc = q.daily_pct >= 100 ? css("--critical") : q.daily_pct >= 80 ? css("--warning") : css("--s1");
+        const mc = q.monthly_pct >= 100 ? css("--critical") : q.monthly_pct >= 80 ? css("--warning") : css("--s1");
+        const st = !q.active ? statusDot(css("--muted"), "停用")
+          : q.daily_pct >= 100 || q.monthly_pct >= 100 ? statusDot(css("--critical"), "熔斷")
+          : q.daily_pct >= 80 || q.monthly_pct >= 80 ? statusDot(css("--warning"), "預警")
+          : statusDot(css("--good"), "正常");
+        return `<tr><td>${esc(q.name)}</td><td>${esc(q.department)}</td>` +
+          `<td class="num">$${q.daily_spent.toFixed(3)}</td><td>${bar(q.daily_pct, dc)} <span style="color:var(--muted)">${q.daily_pct}%</span></td>` +
+          `<td class="num">$${q.monthly_spent.toFixed(3)}</td><td>${bar(q.monthly_pct, mc)} <span style="color:var(--muted)">${q.monthly_pct}%</span></td>` +
+          `<td>${st}</td></tr>`;
+      }).join("") || `<tr><td colspan=7 class="empty">尚無 API Key</td></tr>`);
+
+    $("#perfTable").innerHTML =
+      `<tr><th>模型</th><th class="num">請求</th><th class="num">平均延遲</th><th class="num">首 Token</th><th class="num">錯誤率</th><th class="num">重試</th><th>狀態</th></tr>` +
+      (perf.models.map(m => {
+        const cb = perf.circuit_breakers[m.model];
+        const st = cb && cb.open ? statusDot(css("--critical"), `熔斷 ${cb.cooldown_remaining}s`)
+          : m.error_rate > 0.1 ? statusDot(css("--warning"), "不穩定")
+          : statusDot(css("--good"), "健康");
+        return `<tr><td>${esc(m.model)}</td><td class="num">${fmt(m.requests)}</td>` +
+          `<td class="num">${fmt(m.avg_latency_ms)} ms</td><td class="num">${fmt(m.avg_first_token_ms)} ms</td>` +
+          `<td class="num">${(m.error_rate * 100).toFixed(1)}%</td><td class="num">${m.retries}</td><td>${st}</td></tr>`;
+      }).join("") || `<tr><td colspan=7 class="empty">尚無模型流量</td></tr>`) +
+      `<tr><td>快取</td><td class="num" colspan=2>命中率 ${(perf.cache.hit_rate * 100).toFixed(1)}%</td>` +
+      `<td class="num" colspan=2>命中 ${fmt(perf.cache.hits)}／未中 ${fmt(perf.cache.misses)}</td>` +
+      `<td class="num" colspan=2>條目 ${fmt(perf.cache.entries)}</td></tr>`;
+
+    const secRows = sec.by_type.map(s =>
+      `<tr><td>${esc(s.event_type)}</td><td>${esc(s.action)}</td><td class="num">${fmt(s.n)}</td></tr>`).join("");
+    const evRows = sec.recent_events.slice(0, 8).map(e =>
+      `<tr><td style="color:var(--muted)">${tstr(e.ts)}</td><td>${esc(e.department)}</td>` +
+      `<td>${esc(e.event_type)}：${esc(e.pattern_name)}</td><td>${esc(e.action)}</td></tr>`).join("");
+    $("#secTable").innerHTML =
+      `<tr><th>事件類型</th><th>動作</th><th class="num">次數</th></tr>` +
+      (secRows || `<tr><td colspan=3 class="empty">此區間無安全事件</td></tr>`) +
+      (evRows ? `<tr><th colspan=4 style="padding-top:14px">最近事件</th></tr>` + evRows : "");
+
+    $("#qualityTable").innerHTML =
+      `<tr><th>模型</th><th class="num">回饋數</th><th class="num">讚</th><th class="num">倒讚</th><th class="num">好評率</th></tr>` +
+      (quality.map(q =>
+        `<tr><td>${esc(q.model || "(未標示)")}</td><td class="num">${fmt(q.feedback_count)}</td>` +
+        `<td class="num">${fmt(q.up)}</td><td class="num">${fmt(q.down)}</td>` +
+        `<td class="num">${q.score}%</td></tr>`).join("")
+        || `<tr><td colspan=5 class="empty">尚無使用者回饋（POST /v1/feedback）</td></tr>`);
+
+    $("#nodeTable").innerHTML =
+      `<tr><th>節點</th><th>URL</th><th>版本</th><th class="num">負載</th><th class="num">容量</th><th>心跳</th><th>狀態</th></tr>` +
+      nodes.map(n =>
+        `<tr><td>${esc(n.name)}</td><td style="color:var(--muted)">${esc(n.url)}</td><td>${esc(n.version)}</td>` +
+        `<td class="num">${fmt(n.load_pct, 1)}%</td><td class="num">${fmt(n.capacity)}</td>` +
+        `<td style="color:var(--muted)">${tstr(n.last_heartbeat)}</td>` +
+        `<td>${n.status === "online" ? statusDot(css("--good"), "在線") : statusDot(css("--critical"), "離線")}</td></tr>`).join("");
+
+    $("#reqTable").innerHTML =
+      `<tr><th>時間</th><th>部門/使用者</th><th>指定模型</th><th>實際模型</th><th>路由原因</th>` +
+      `<th class="num">Token 入/出</th><th class="num">成本</th><th class="num">延遲</th><th>安全命中</th><th>狀態</th></tr>` +
+      (reqs.map(r => {
+        const st = r.status === "ok"
+          ? (r.cached ? statusDot(css("--s2"), "快取") : statusDot(css("--good"), "OK"))
+          : statusDot(css("--critical"), r.status);
+        return `<tr><td style="color:var(--muted)">${tstr(r.ts)}</td>` +
+          `<td>${esc(r.department)}／${esc(r.user_name)}</td><td>${esc(r.model_requested)}</td>` +
+          `<td>${esc(r.model_used || "—")}</td><td style="color:var(--muted)">${esc(r.route_reason)}</td>` +
+          `<td class="num">${fmt(r.prompt_tokens)}/${fmt(r.completion_tokens)}</td>` +
+          `<td class="num">$${(r.cost_usd || 0).toFixed(5)}</td>` +
+          `<td class="num">${fmt(r.latency_ms)} ms</td>` +
+          `<td style="color:var(--warning)">${esc(r.security_hits || "")}</td><td>${st}</td></tr>`;
+      }).join("") || `<tr><td colspan=10 class="empty">尚無請求</td></tr>`);
+  } catch (e) {
+    console.error("refresh failed", e);
+  }
+}
+
+/* ---------- 控制列 ---------- */
+$("#rangeSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#rangeSeg button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); HOURS = Number(b.dataset.h); refresh();
+});
+$("#groupSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#groupSeg button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); GROUP = b.dataset.g; refresh();
+});
+$("#mk")?.addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+window.addEventListener("resize", () => refresh());
+
+/* ---------- 啟動 ---------- */
+if (MK) showApp(); else $("#login").hidden = false;
+</script>
+</body>
+</html>

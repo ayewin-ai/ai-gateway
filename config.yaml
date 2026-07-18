@@ -1,0 +1,148 @@
+# Enterprise AI Gateway 設定檔
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  node_name: gateway-node-1        # 跨節點管理：本節點名稱
+  master_key: sk-admin-master-key  # 管理 Dashboard / Admin API 用（正式環境請改用環境變數 GATEWAY_MASTER_KEY）
+
+database:
+  path: data/gateway.db
+
+# ---------------------------------------------------------------
+# 模型註冊表：地端（local）與雲端（cloud）混合部署
+# provider 類型：
+#   ollama      = 地端 Ollama（OpenAI 相容端點）
+#   openai      = OpenAI 相容雲端 API（OpenAI / Azure / OpenRouter / vLLM 皆可）
+#   anthropic   = Anthropic Claude API
+#   mock        = 內建模擬供應商（無外網 PoC / Demo 用）
+# price 單位：USD / 1M tokens
+# quality：1-10 模型品質評分（路由決策用）
+# ---------------------------------------------------------------
+models:
+  - name: local-llama3.2
+    provider: ollama
+    base_url: http://localhost:11434/v1
+    upstream_model: llama3.2
+    tier: local
+    quality: 6
+    max_context: 32768
+    price_input: 0.0
+    price_output: 0.0
+
+  - name: local-qwen2.5
+    provider: ollama
+    base_url: http://localhost:11434/v1
+    upstream_model: qwen2.5:7b
+    tier: local
+    quality: 6
+    max_context: 32768
+    price_input: 0.0
+    price_output: 0.0
+
+  - name: gpt-4o
+    provider: openai
+    base_url: https://api.openai.com/v1
+    upstream_model: gpt-4o
+    api_key_env: OPENAI_API_KEY
+    tier: cloud
+    quality: 9
+    max_context: 128000
+    price_input: 2.5
+    price_output: 10.0
+
+  - name: claude-sonnet
+    provider: anthropic
+    base_url: https://api.anthropic.com
+    upstream_model: claude-sonnet-4-5
+    api_key_env: ANTHROPIC_API_KEY
+    tier: cloud
+    quality: 9
+    max_context: 200000
+    price_input: 3.0
+    price_output: 15.0
+
+  # 模擬模型：離線 Demo / PoC 驗證治理功能用，不需 GPU 與外網
+  - name: mock-local-small
+    provider: mock
+    upstream_model: mock-small
+    tier: local
+    quality: 5
+    max_context: 8192
+    price_input: 0.0
+    price_output: 0.0
+
+  - name: mock-cloud-large
+    provider: mock
+    upstream_model: mock-large
+    tier: cloud
+    quality: 9
+    max_context: 128000
+    price_input: 3.0
+    price_output: 15.0
+
+# ---------------------------------------------------------------
+# 智慧路由：依敏感度、任務複雜度、預算、品質、可用性路由
+# ---------------------------------------------------------------
+routing:
+  auto_model_name: auto            # 用戶端指定 model=auto 即啟用智慧路由
+  local_preferred: [local-llama3.2, local-qwen2.5, mock-local-small]
+  cloud_preferred: [gpt-4o, claude-sonnet, mock-cloud-large]
+  # 複雜任務判斷：超過字元數或命中關鍵字 → 優先雲端大模型
+  complexity_char_threshold: 1200
+  complexity_keywords: ["分析", "推理", "程式", "架構", "翻譯整份", "code review", "refactor", "數學證明", "法律"]
+  # 敏感資料處理策略：local_only = 強制地端；block = 直接拒絕
+  sensitive_route: local_only
+  # 失敗重試與降級模型、故障切換與備援
+  max_retries: 2
+  # 熔斷器：連續失敗 N 次後停用該模型 cooldown 秒
+  circuit_failure_threshold: 3
+  circuit_cooldown_seconds: 60
+
+# ---------------------------------------------------------------
+# 安全治理層：DLP、提示注入、遮罩/阻擋
+# ---------------------------------------------------------------
+security:
+  dlp_action: mask                 # mask = 遮罩後放行, block = 拒絕請求
+  prompt_injection_action: flag    # flag = 記錄稽核, block = 拒絕請求
+  # 稽核不保存原始敏感提示，避免形成新的敏感資料集中風險
+  store_prompt_in_audit: false
+  dlp_patterns:
+    - name: taiwan_id
+      regex: '\b[A-Z][12]\d{8}\b'
+      description: 台灣身分證字號
+    - name: credit_card
+      regex: '\b(?:\d[ -]?){13,16}\b'
+      description: 信用卡號
+    - name: email
+      regex: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+      description: 電子郵件
+    - name: phone_tw
+      regex: '\b09\d{2}[- ]?\d{3}[- ]?\d{3}\b'
+      description: 台灣手機號碼
+    - name: api_secret
+      regex: '\b(?:sk|pk|ghp|xoxb)-[A-Za-z0-9_\-]{16,}\b'
+      description: API 金鑰 / Token
+  sensitive_keywords: ["機密", "內部限閱", "營業秘密", "confidential", "薪資", "個資"]
+  injection_patterns:
+    - 'ignore (all )?(previous|above) instructions'
+    - '忽略(之前|上面|以上)(的)?(所有)?指令'
+    - 'you are now (dan|jailbroken)'
+    - 'system prompt'
+
+# ---------------------------------------------------------------
+# 快取與效能層（Prompt Cache、租戶隔離）
+# ---------------------------------------------------------------
+cache:
+  enabled: true
+  ttl_seconds: 300
+  isolate_by_department: true      # 租戶隔離，防跨使用者外洩
+
+# ---------------------------------------------------------------
+# 預設配額（新 API Key 未指定時套用）
+# ---------------------------------------------------------------
+default_limits:
+  rpm_limit: 60                    # 每分鐘請求數
+  daily_budget_usd: 5.0
+  monthly_budget_usd: 100.0
+  budget_warn_ratio: 0.8           # 軟性預警門檻（80% 起回應 Warning header）
